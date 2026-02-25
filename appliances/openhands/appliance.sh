@@ -385,12 +385,169 @@ service_configure() {
 }
 
 # ==========================================================================
+#  HELPER: attempt_letsencrypt
+# ==========================================================================
+attempt_letsencrypt() {
+    if [ -z "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
+        log_oh info "No TLS domain set, skipping Let's Encrypt"
+        return 0
+    fi
+
+    log_oh info "Attempting Let's Encrypt certificate for ${ONEAPP_OH_TLS_DOMAIN}"
+    if certbot certonly --non-interactive --agree-tos \
+        --register-unsafely-without-email --standalone \
+        --preferred-challenges http \
+        -d "${ONEAPP_OH_TLS_DOMAIN}" 2>&1 | tee -a "${OH_LOG}"; then
+
+        # Update symlinks to Let's Encrypt certs
+        ln -sf "/etc/letsencrypt/live/${ONEAPP_OH_TLS_DOMAIN}/fullchain.pem" "${OH_CERT_DIR}/cert.pem"
+        ln -sf "/etc/letsencrypt/live/${ONEAPP_OH_TLS_DOMAIN}/privkey.pem" "${OH_CERT_DIR}/key.pem"
+
+        # Create renewal hook to reload Caddy
+        mkdir -p /etc/letsencrypt/renewal-hooks/post
+        cat > /etc/letsencrypt/renewal-hooks/post/reload-caddy.sh <<'HOOK_EOF'
+#!/bin/bash
+systemctl reload caddy
+HOOK_EOF
+        chmod +x /etc/letsencrypt/renewal-hooks/post/reload-caddy.sh
+
+        log_oh info "Let's Encrypt certificate obtained for ${ONEAPP_OH_TLS_DOMAIN}"
+    else
+        log_oh warn "Let's Encrypt failed, keeping self-signed certificate"
+    fi
+}
+
+# ==========================================================================
+#  HELPER: wait_for_openhands
+# ==========================================================================
+wait_for_openhands() {
+    local _timeout=120 _elapsed=0
+    log_oh info "Waiting for OpenHands readiness (timeout: ${_timeout}s)"
+    while ! curl -sf "http://127.0.0.1:3000/" >/dev/null 2>&1; do
+        sleep 5
+        _elapsed=$((_elapsed + 5))
+        if [ "${_elapsed}" -ge "${_timeout}" ]; then
+            log_oh error "OpenHands not ready after ${_timeout}s -- check: docker logs openhands"
+            exit 1
+        fi
+    done
+    log_oh info "OpenHands ready (${_elapsed}s)"
+}
+
+# ==========================================================================
+#  HELPER: wait_for_caddy
+# ==========================================================================
+wait_for_caddy() {
+    local _timeout=30 _elapsed=0 _code
+    log_oh info "Waiting for Caddy readiness (timeout: ${_timeout}s)"
+    while true; do
+        _code=$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' "https://127.0.0.1/" 2>/dev/null)
+        if [ "${_code}" = "401" ] || [ "${_code}" = "200" ]; then
+            break
+        fi
+        sleep 2
+        _elapsed=$((_elapsed + 2))
+        if [ "${_elapsed}" -ge "${_timeout}" ]; then
+            log_oh error "Caddy not ready after ${_timeout}s -- check: journalctl -u caddy"
+            exit 1
+        fi
+    done
+    log_oh info "Caddy ready (${_elapsed}s)"
+}
+
+# ==========================================================================
+#  HELPER: write_report_file
+# ==========================================================================
+write_report_file() {
+    local _report="${ONE_SERVICE_REPORT:-/etc/one-appliance/config}"
+    local _pub_ip _password _tls_mode _endpoint
+    local _oh_status _caddy_status
+
+    _pub_ip=$(get_public_ip)
+    _password=$(cat "${OH_DATA_DIR}/password" 2>/dev/null || echo 'unknown')
+
+    if [ -n "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
+        _tls_mode="Let's Encrypt (${ONEAPP_OH_TLS_DOMAIN})"
+        _endpoint="${ONEAPP_OH_TLS_DOMAIN}"
+    else
+        _tls_mode="self-signed"
+        _endpoint="${_pub_ip}"
+    fi
+
+    _oh_status=$(systemctl is-active openhands 2>/dev/null || echo 'unknown')
+    _caddy_status=$(systemctl is-active caddy 2>/dev/null || echo 'unknown')
+
+    mkdir -p "$(dirname "${_report}")"
+    cat > "${_report}" <<REPORT_EOF
+[Connection info]
+url          = https://${_endpoint}
+username     = admin
+password     = ${_password}
+
+[Service status]
+openhands    = ${_oh_status}
+caddy        = ${_caddy_status}
+tls          = ${_tls_mode}
+
+[Quick start]
+1. Open https://${_endpoint} in your browser
+2. Log in with username "admin" and password above
+3. Configure your LLM provider in the OpenHands settings
+4. Start coding with your AI agent
+
+[Workspace]
+path         = /opt/openhands/workspace (persisted across reboots)
+
+[Service management]
+systemctl status openhands
+systemctl restart openhands
+docker logs openhands -f
+journalctl -u caddy -f
+
+[Password retrieval]
+cat /var/lib/openhands/password
+REPORT_EOF
+    chmod 600 "${_report}"
+    log_oh info "Report written to ${_report}"
+}
+
+# ==========================================================================
 #  LIFECYCLE: service_bootstrap  (runs after configure, starts services)
 # ==========================================================================
 service_bootstrap() {
     init_oh_log
     log_oh info "=== service_bootstrap started ==="
-    log_oh info "Bootstrap implementation pending (Plan 01-02)"
+
+    # Ensure Docker is running
+    systemctl start docker
+
+    # Attempt Let's Encrypt (port 80 is free before Caddy starts)
+    attempt_letsencrypt
+
+    # Start OpenHands container
+    systemctl enable openhands.service
+    systemctl start openhands.service
+    wait_for_openhands
+
+    # Start Caddy reverse proxy
+    systemctl enable caddy.service
+    systemctl start caddy.service
+    wait_for_caddy
+
+    # Enable cleanup timer
+    systemctl enable --now openhands-cleanup.timer
+
+    # Write connection report
+    write_report_file
+
+    local _endpoint
+    if [ -n "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
+        _endpoint="${ONEAPP_OH_TLS_DOMAIN}"
+    else
+        _endpoint=$(get_public_ip)
+    fi
+    log_oh info "=== service_bootstrap complete ==="
+    log_oh info "OpenHands available at https://${_endpoint}"
 }
 
 # ==========================================================================

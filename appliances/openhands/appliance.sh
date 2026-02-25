@@ -267,12 +267,121 @@ BANNER_EOF
 }
 
 # ==========================================================================
+#  HELPER: generate_selfsigned_cert
+# ==========================================================================
+generate_selfsigned_cert() {
+    local _vm_ip
+    _vm_ip=$(hostname -I | awk '{print $1}')
+    mkdir -p "${OH_CERT_DIR}"
+    openssl req -x509 -nodes -newkey rsa:2048 \
+        -keyout "${OH_CERT_DIR}/selfsigned-key.pem" \
+        -out "${OH_CERT_DIR}/selfsigned-cert.pem" \
+        -days 3650 \
+        -subj "/CN=OpenHands" \
+        -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:${_vm_ip}"
+    chmod 0600 "${OH_CERT_DIR}/selfsigned-key.pem"
+    chmod 0644 "${OH_CERT_DIR}/selfsigned-cert.pem"
+    ln -sf "${OH_CERT_DIR}/selfsigned-cert.pem" "${OH_CERT_DIR}/cert.pem"
+    ln -sf "${OH_CERT_DIR}/selfsigned-key.pem" "${OH_CERT_DIR}/key.pem"
+    log_oh info "Self-signed certificate generated for ${_vm_ip}"
+}
+
+# ==========================================================================
+#  HELPER: generate_password
+# ==========================================================================
+generate_password() {
+    local _password="${ONEAPP_OH_AUTH_PASSWORD:-}"
+    if [ -z "${_password}" ]; then
+        if [ -f "${OH_DATA_DIR}/password" ]; then
+            log_oh info "Keeping existing auto-generated password"
+            return 0
+        fi
+        _password=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)
+        log_oh info "Auto-generated basic auth password"
+    fi
+    mkdir -p "${OH_DATA_DIR}"
+    echo "${_password}" > "${OH_DATA_DIR}/password"
+    chmod 0600 "${OH_DATA_DIR}/password"
+}
+
+# ==========================================================================
+#  HELPER: generate_caddyfile
+# ==========================================================================
+generate_caddyfile() {
+    local _password _hash
+    _password=$(cat "${OH_DATA_DIR}/password")
+    _hash=$(${CADDY_BIN} hash-password --plaintext "${_password}")
+
+    if [ -n "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
+        cat > "${OH_CADDYFILE}" <<CADDY_EOF
+{
+    email admin@${ONEAPP_OH_TLS_DOMAIN}
+}
+
+${ONEAPP_OH_TLS_DOMAIN} {
+    basicauth /* {
+        admin ${_hash}
+    }
+
+    reverse_proxy localhost:3000 {
+        flush_interval -1
+        stream_timeout 0
+    }
+}
+CADDY_EOF
+        log_oh info "Caddyfile generated for domain: ${ONEAPP_OH_TLS_DOMAIN}"
+    else
+        cat > "${OH_CADDYFILE}" <<CADDY_EOF
+{
+    auto_https disable_redirects
+}
+
+:443 {
+    tls ${OH_CERT_DIR}/cert.pem ${OH_CERT_DIR}/key.pem
+
+    basicauth /* {
+        admin ${_hash}
+    }
+
+    reverse_proxy localhost:3000 {
+        flush_interval -1
+        stream_timeout 0
+    }
+}
+CADDY_EOF
+        log_oh info "Caddyfile generated for self-signed TLS"
+    fi
+    chmod 0600 "${OH_CADDYFILE}"
+}
+
+# ==========================================================================
+#  HELPER: generate_openhands_env
+# ==========================================================================
+generate_openhands_env() {
+    mkdir -p /etc/openhands
+    cat > "${OH_ENV_FILE}" <<ENV_EOF
+OH_MAIN_IMAGE=${OH_IMAGE}
+OH_RUNTIME=${OH_RUNTIME_IMAGE}
+ENV_EOF
+    chmod 0600 "${OH_ENV_FILE}"
+    log_oh info "OpenHands environment file written to ${OH_ENV_FILE}"
+}
+
+# ==========================================================================
 #  LIFECYCLE: service_configure  (runs at each VM boot)
 # ==========================================================================
 service_configure() {
     init_oh_log
     log_oh info "=== service_configure started ==="
-    log_oh info "Configure implementation pending (Plan 01-02)"
+
+    generate_selfsigned_cert
+    generate_password
+    generate_caddyfile
+    generate_openhands_env
+
+    systemctl daemon-reload
+
+    log_oh info "=== service_configure complete ==="
 }
 
 # ==========================================================================

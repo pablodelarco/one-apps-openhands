@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+# --------------------------------------------------------------------------
+# OpenHands -- ONE-APPS Appliance Lifecycle Script
+#
+# Implements the one-apps service_* interface for an AI coding agent
+# powered by OpenHands, packaged as an OpenNebula marketplace appliance.
+# Docker-based sandbox execution behind Caddy reverse proxy with TLS
+# and HTTP basic auth.
+# --------------------------------------------------------------------------
+
+# shellcheck disable=SC2034  # ONE_SERVICE_* vars used by one-apps framework
+
+ONE_SERVICE_NAME='Service OpenHands - AI Coding Agent'
+ONE_SERVICE_VERSION='1.0.0'
+ONE_SERVICE_BUILD=$(date +%s)
+ONE_SERVICE_SHORT_DESCRIPTION='AI coding agent (OpenHands) with HTTPS and basic auth'
+ONE_SERVICE_DESCRIPTION='OpenHands AI coding agent behind Caddy reverse proxy.
+HTTPS with self-signed or Let'\''s Encrypt certificates. HTTP basic auth.
+Docker-based sandbox execution for code, commands, and web browsing.'
+ONE_SERVICE_RECONFIGURABLE=true
+
+# --------------------------------------------------------------------------
+# ONE_SERVICE_PARAMS -- flat array, 4-element stride:
+#   'VARNAME' 'lifecycle_step' 'Description' 'default_value'
+#
+# All variables are bound to the 'configure' step so they are re-read on
+# every VM boot / reconfigure cycle.
+# --------------------------------------------------------------------------
+ONE_SERVICE_PARAMS=(
+    'ONEAPP_OH_AUTH_PASSWORD'  'configure' 'Basic auth password (auto-generated if empty)' ''
+    'ONEAPP_OH_TLS_DOMAIN'    'configure' 'FQDN for Let'\''s Encrypt (self-signed if empty)' ''
+)
+
+# --------------------------------------------------------------------------
+# Default value assignments
+# --------------------------------------------------------------------------
+ONEAPP_OH_AUTH_PASSWORD="${ONEAPP_OH_AUTH_PASSWORD:-}"
+ONEAPP_OH_TLS_DOMAIN="${ONEAPP_OH_TLS_DOMAIN:-}"
+
+# --------------------------------------------------------------------------
+# Constants
+# --------------------------------------------------------------------------
+readonly OH_DATA_DIR="/var/lib/openhands"
+readonly OH_WORKSPACE_DIR="/opt/openhands/workspace"
+readonly OH_CERT_DIR="/etc/ssl/openhands"
+readonly OH_ENV_FILE="/etc/openhands/env"
+readonly OH_CADDYFILE="/etc/caddy/Caddyfile"
+readonly OH_LOG="/var/log/one-appliance/openhands.log"
+readonly CADDY_BIN="/usr/local/bin/caddy"
+readonly CADDY_VERSION="2.11.1"
+
+# IMPORTANT: Verify exact image names/tags at build time from https://docs.all-hands.dev
+readonly OH_IMAGE="docker.all-hands.dev/all-hands-ai/openhands:0.27"
+readonly OH_RUNTIME_IMAGE="docker.all-hands.dev/all-hands-ai/runtime:0.27-nikolaik"
+
+# ==========================================================================
+#  LOGGING: dedicated application log helpers
+# ==========================================================================
+
+# Ensure log directory and file exist with correct permissions
+init_oh_log() {
+    mkdir -p /var/log/one-appliance
+    touch "${OH_LOG}"
+    chmod 0640 "${OH_LOG}"
+}
+
+# Log to both the one-apps framework (via msg) and the dedicated log file
+log_oh() {
+    local _level="$1"
+    shift
+    local _message="$*"
+    local _timestamp
+    _timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    echo "${_timestamp} [${_level^^}] ${_message}" >> "${OH_LOG}"
+    msg "${_level}" "${_message}"
+}
+
+# ==========================================================================
+#  HELPER: get_public_ip  (resolve internet-reachable IP for endpoint)
+# ==========================================================================
+
+# Returns the public IP of this VM so that remote users can connect.
+# Tries external lookup services first (the VM may be behind NAT),
+# falls back to the first local IP if external lookup fails.
+get_public_ip() {
+    local _pub_ip=""
+    for _svc in "https://ifconfig.me" "https://api.ipify.org" "https://icanhazip.com"; do
+        _pub_ip=$(curl -sf --max-time 5 "${_svc}" 2>/dev/null | tr -d '[:space:]')
+        if [[ "${_pub_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "${_pub_ip}"
+            return 0
+        fi
+    done
+    # Fallback: local IP (private network, may not be reachable from internet)
+    hostname -I 2>/dev/null | awk '{print $1}'
+}
+
+# ==========================================================================
+#  LIFECYCLE: service_install  (Packer build-time, runs once)
+# ==========================================================================
+service_install() {
+    init_oh_log
+    log_oh info "=== service_install started ==="
+    log_oh info "Installing OpenHands appliance components"
+
+    # 1. Install runtime dependencies
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq curl jq certbot openssl >/dev/null
+
+    # 2. Install Docker CE from official repository
+    log_oh info "Installing Docker CE"
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | gpg --dearmor -o /usr/share/keyrings/docker.gpg
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
+        > /etc/apt/sources.list.d/docker.list
+    apt-get update -qq
+    apt-get install -y docker-ce docker-ce-cli containerd.io >/dev/null
+    systemctl enable docker
+    log_oh info "Docker CE installed"
+
+    # 3. Download Caddy static binary
+    log_oh info "Downloading Caddy v${CADDY_VERSION}"
+    curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" \
+        | tar xz -C /usr/local/bin caddy
+    chmod 0755 /usr/local/bin/caddy
+    log_oh info "Caddy installed to ${CADDY_BIN}"
+
+    # 4. Pre-pull OpenHands Docker images
+    log_oh info "Pre-pulling OpenHands images (this may take a while)"
+    docker pull "${OH_IMAGE}"
+    docker pull "${OH_RUNTIME_IMAGE}"
+    log_oh info "Main image size: $(docker image inspect "${OH_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
+    log_oh info "Runtime image size: $(docker image inspect "${OH_RUNTIME_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
+
+    # 5. Create openhands user and directories
+    log_oh info "Creating openhands user and directories"
+    useradd -r -m -u 1000 -d /var/lib/openhands -s /usr/sbin/nologin openhands
+    mkdir -p "${OH_WORKSPACE_DIR}" "${OH_CERT_DIR}" /etc/openhands /etc/caddy
+    chown 1000:1000 "${OH_DATA_DIR}" "${OH_WORKSPACE_DIR}"
+
+    # 6. Create 2 GB swap file
+    log_oh info "Creating 2 GB swap file"
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+    # 7. Create OpenHands systemd unit
+    log_oh info "Creating systemd units"
+    cat > /etc/systemd/system/openhands.service <<'UNIT_EOF'
+[Unit]
+Description=OpenHands AI Coding Agent
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/bin/docker stop openhands
+ExecStartPre=-/usr/bin/docker rm openhands
+ExecStart=/usr/local/bin/openhands-start.sh
+ExecStop=/usr/bin/docker stop openhands
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+
+    # 8. Create OpenHands start wrapper
+    cat > /usr/local/bin/openhands-start.sh <<'WRAPPER_EOF'
+#!/bin/bash
+source /etc/openhands/env
+exec docker run -d --name openhands \
+    --restart unless-stopped \
+    -e SANDBOX_RUNTIME_CONTAINER_IMAGE="${OH_RUNTIME}" \
+    -e SANDBOX_USER_ID=1000 \
+    -e WORKSPACE_BASE=/opt/openhands/workspace \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v /var/lib/openhands/.openhands:/.openhands \
+    -v /opt/openhands/workspace:/opt/openhands/workspace \
+    -p 127.0.0.1:3000:3000 \
+    --add-host host.docker.internal:host-gateway \
+    --pull=never \
+    "${OH_MAIN_IMAGE}"
+WRAPPER_EOF
+    chmod +x /usr/local/bin/openhands-start.sh
+
+    # 9. Create Caddy systemd unit
+    cat > /etc/systemd/system/caddy.service <<'UNIT_EOF'
+[Unit]
+Description=Caddy Reverse Proxy for OpenHands
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+
+    # 10. Create Docker cleanup timer
+    cat > /etc/systemd/system/openhands-cleanup.timer <<'TIMER_EOF'
+[Unit]
+Description=Periodic Docker cleanup for OpenHands
+
+[Timer]
+OnBootSec=1h
+OnUnitActiveSec=4h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER_EOF
+
+    cat > /etc/systemd/system/openhands-cleanup.service <<'UNIT_EOF'
+[Unit]
+Description=Docker cleanup for OpenHands
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker container prune -f --filter "until=2h"
+ExecStart=/usr/bin/docker system prune -f --filter "until=24h"
+UNIT_EOF
+
+    # 11. Reload systemd
+    systemctl daemon-reload
+
+    # 12. Clean up apt cache
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    # 13. Install SSH login banner
+    cat > /etc/profile.d/openhands-banner.sh <<'BANNER_EOF'
+#!/bin/bash
+[[ $- == *i* ]] || return
+_pub_ip=""
+for _svc in "https://ifconfig.me" "https://api.ipify.org" "https://icanhazip.com"; do
+    _pub_ip=$(curl -sf --max-time 3 "${_svc}" 2>/dev/null | tr -d '[:space:]')
+    [[ "${_pub_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && break
+    _pub_ip=""
+done
+_vm_ip="${_pub_ip:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+_password=$(cat /var/lib/openhands/password 2>/dev/null || echo 'see report')
+_oh=$(systemctl is-active openhands 2>/dev/null || echo 'unknown')
+_caddy=$(systemctl is-active caddy 2>/dev/null || echo 'unknown')
+printf '\n'
+printf '  OpenHands -- AI Coding Agent\n'
+printf '  ============================\n'
+printf '  Endpoint : https://%s\n' "${_vm_ip}"
+printf '  Password : %s\n' "${_password}"
+printf '  OpenHands: %s\n' "${_oh}"
+printf '  Caddy    : %s\n' "${_caddy}"
+printf '\n'
+printf '  Report   : cat /etc/one-appliance/config\n'
+printf '  Logs     : tail -f /var/log/one-appliance/openhands.log\n'
+printf '\n'
+BANNER_EOF
+    chmod 0644 /etc/profile.d/openhands-banner.sh
+
+    log_oh info "OpenHands appliance install complete"
+}
+
+# ==========================================================================
+#  LIFECYCLE: service_configure  (runs at each VM boot)
+# ==========================================================================
+service_configure() {
+    init_oh_log
+    log_oh info "=== service_configure started ==="
+    log_oh info "Configure implementation pending (Plan 01-02)"
+}
+
+# ==========================================================================
+#  LIFECYCLE: service_bootstrap  (runs after configure, starts services)
+# ==========================================================================
+service_bootstrap() {
+    init_oh_log
+    log_oh info "=== service_bootstrap started ==="
+    log_oh info "Bootstrap implementation pending (Plan 01-02)"
+}
+
+# ==========================================================================
+#  LIFECYCLE: service_cleanup
+# ==========================================================================
+service_cleanup() { :; }
+
+# ==========================================================================
+#  LIFECYCLE: service_help
+# ==========================================================================
+service_help() {
+    cat <<'HELP'
+OpenHands Appliance
+===================
+
+AI coding agent (OpenHands) behind Caddy reverse proxy with TLS and
+HTTP basic authentication. Docker-based sandbox execution for code,
+commands, and web browsing.
+
+Configuration variables (set via OpenNebula context):
+  ONEAPP_OH_AUTH_PASSWORD    Basic auth password (auto-generated 16-char if empty)
+  ONEAPP_OH_TLS_DOMAIN      FQDN for Let's Encrypt certificate (optional)
+                             If empty, self-signed certificate is used
+
+Ports:
+  443   HTTPS (Caddy reverse proxy with basic auth)
+  3000  OpenHands UI (bound to 127.0.0.1, not directly accessible)
+
+Service management:
+  systemctl status openhands        Check OpenHands container status
+  systemctl restart openhands       Restart OpenHands container
+  systemctl status caddy            Check Caddy reverse proxy status
+  systemctl restart caddy           Restart Caddy
+  journalctl -u openhands -f        Follow OpenHands logs
+  journalctl -u caddy -f            Follow Caddy logs
+
+Configuration files:
+  /etc/openhands/env                Environment file (image refs)
+  /etc/caddy/Caddyfile              Caddy reverse proxy config
+  /etc/ssl/openhands/cert.pem       TLS certificate (symlink)
+  /etc/ssl/openhands/key.pem        TLS private key (symlink)
+
+Data directories:
+  /opt/openhands/workspace          Workspace files (persisted)
+  /var/lib/openhands/.openhands     OpenHands state (persisted)
+
+Report and logs:
+  /etc/one-appliance/config         Service report (credentials, endpoints)
+  /var/log/one-appliance/openhands.log   Application log (all stages)
+
+Password retrieval:
+  cat /var/lib/openhands/password
+HELP
+}

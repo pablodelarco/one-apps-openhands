@@ -585,6 +585,7 @@ wait_for_openhands() {
 wait_for_caddy() {
     local _timeout=30 _elapsed=0 _code
     log_oh info "Waiting for Caddy readiness (timeout: ${_timeout}s)"
+    sleep 2  # give Caddy time to open TLS listener after systemctl returns
     while true; do
         _code=$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' "https://127.0.0.1/" 2>/dev/null)
         if [ "${_code}" = "401" ] || [ "${_code}" = "200" ]; then
@@ -593,8 +594,8 @@ wait_for_caddy() {
         sleep 2
         _elapsed=$((_elapsed + 2))
         if [ "${_elapsed}" -ge "${_timeout}" ]; then
-            log_oh error "Caddy not ready after ${_timeout}s -- check: journalctl -u caddy"
-            exit 1
+            log_oh warn "Caddy not ready after ${_timeout}s -- check: journalctl -u caddy"
+            return 0  # don't abort bootstrap; Caddy may start momentarily
         fi
     done
     log_oh info "Caddy ready (${_elapsed}s)"

@@ -188,7 +188,7 @@ exec docker run -d --name openhands \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \
     -v /opt/openhands/workspace:/opt/openhands/workspace \
-    -p 127.0.0.1:3000:3000 \
+    -p 172.17.0.1:3000:3000 \
     --add-host host.docker.internal:host-gateway \
     --pull=never \
     "${OH_MAIN_IMAGE}"
@@ -332,7 +332,7 @@ ${ONEAPP_OH_TLS_DOMAIN} {
         admin ${_hash}
     }
 
-    reverse_proxy localhost:3000 {
+    reverse_proxy 172.17.0.1:3000 {
         flush_interval -1
         stream_timeout 0
     }
@@ -352,7 +352,7 @@ CADDY_EOF
         admin ${_hash}
     }
 
-    reverse_proxy localhost:3000 {
+    reverse_proxy 172.17.0.1:3000 {
         flush_interval -1
         stream_timeout 0
     }
@@ -521,7 +521,7 @@ HOOK_EOF
 wait_for_openhands() {
     local _timeout=120 _elapsed=0
     log_oh info "Waiting for OpenHands readiness (timeout: ${_timeout}s)"
-    while ! curl -sf "http://127.0.0.1:3000/" >/dev/null 2>&1; do
+    while ! curl -sf "http://172.17.0.1:3000/" >/dev/null 2>&1; do
         sleep 5
         _elapsed=$((_elapsed + 5))
         if [ "${_elapsed}" -ge "${_timeout}" ]; then

@@ -29,6 +29,9 @@ ONE_SERVICE_RECONFIGURABLE=true
 ONE_SERVICE_PARAMS=(
     'ONEAPP_OH_AUTH_PASSWORD'  'configure' 'Basic auth password (auto-generated if empty)' ''
     'ONEAPP_OH_TLS_DOMAIN'    'configure' 'FQDN for Let'\''s Encrypt (self-signed if empty)' ''
+    'ONEAPP_OH_LLM_API_KEY'   'configure' 'LLM provider API key' ''
+    'ONEAPP_OH_LLM_MODEL'     'configure' 'LLM model (e.g. anthropic/claude-sonnet-4-20250514)' 'anthropic/claude-sonnet-4-20250514'
+    'ONEAPP_OH_LLM_BASE_URL'  'configure' 'Custom LLM endpoint for SLM-Copilot or OpenAI-compatible' ''
 )
 
 # --------------------------------------------------------------------------
@@ -36,6 +39,9 @@ ONE_SERVICE_PARAMS=(
 # --------------------------------------------------------------------------
 ONEAPP_OH_AUTH_PASSWORD="${ONEAPP_OH_AUTH_PASSWORD:-}"
 ONEAPP_OH_TLS_DOMAIN="${ONEAPP_OH_TLS_DOMAIN:-}"
+ONEAPP_OH_LLM_API_KEY="${ONEAPP_OH_LLM_API_KEY:-}"
+ONEAPP_OH_LLM_MODEL="${ONEAPP_OH_LLM_MODEL:-anthropic/claude-sonnet-4-20250514}"
+ONEAPP_OH_LLM_BASE_URL="${ONEAPP_OH_LLM_BASE_URL:-}"
 
 # --------------------------------------------------------------------------
 # Constants
@@ -177,6 +183,7 @@ exec docker run -d --name openhands \
     -e AGENT_SERVER_IMAGE_TAG="1.11.4-python" \
     -e SANDBOX_USER_ID=1000 \
     -e WORKSPACE_BASE=/opt/openhands/workspace \
+    ${SSL_VERIFY:+-e SSL_VERIFY="${SSL_VERIFY}"} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \
     -v /opt/openhands/workspace:/opt/openhands/workspace \
@@ -364,8 +371,59 @@ generate_openhands_env() {
 OH_MAIN_IMAGE=${OH_IMAGE}
 # OH_RUNTIME_IMAGE used at build time for docker pull (line 132)
 ENV_EOF
+
+    # Add SSL bypass when custom base URL is set (SLM-Copilot uses self-signed certs)
+    if [ -n "${ONEAPP_OH_LLM_BASE_URL:-}" ]; then
+        echo "SSL_VERIFY=False" >> "${OH_ENV_FILE}"
+    fi
+
     chmod 0600 "${OH_ENV_FILE}"
     log_oh info "OpenHands environment file written to ${OH_ENV_FILE}"
+}
+
+# ==========================================================================
+#  HELPER: generate_openhands_settings
+# ==========================================================================
+generate_openhands_settings() {
+    local _settings_dir="${OH_DATA_DIR}/.openhands"
+    local _settings_file="${_settings_dir}/settings.json"
+    mkdir -p "${_settings_dir}"
+
+    # Build settings.json using jq for proper JSON escaping (API keys may
+    # contain shell-special characters like $, ", \, backticks).
+    jq -n \
+        --arg model "${ONEAPP_OH_LLM_MODEL}" \
+        --arg api_key "${ONEAPP_OH_LLM_API_KEY}" \
+        --arg base_url "${ONEAPP_OH_LLM_BASE_URL}" \
+        '{
+            language: "en",
+            agent: "CodeActAgent",
+            max_iterations: null,
+            security_analyzer: null,
+            confirmation_mode: false,
+            llm_model: $model,
+            llm_api_key: (if $api_key == "" then null else $api_key end),
+            llm_base_url: (if $base_url == "" then null else $base_url end),
+            remote_runtime_resource_factor: null,
+            enable_default_condenser: true,
+            enable_sound_notifications: false,
+            enable_proactive_conversation_starters: true,
+            enable_solvability_analysis: true,
+            user_consents_to_analytics: null,
+            sandbox_base_container_image: null,
+            sandbox_runtime_container_image: null,
+            mcp_config: null,
+            search_api_key: null,
+            sandbox_api_key: null,
+            max_budget_per_task: null,
+            condenser_max_size: null,
+            secrets_store: { provider_tokens: {} },
+            v1_enabled: true
+        }' > "${_settings_file}"
+
+    chown 1000:1000 "${_settings_dir}" "${_settings_file}"
+    chmod 0600 "${_settings_file}"
+    log_oh info "OpenHands settings.json written (model=${ONEAPP_OH_LLM_MODEL})"
 }
 
 # ==========================================================================
@@ -379,6 +437,7 @@ service_configure() {
     generate_password
     generate_caddyfile
     generate_openhands_env
+    generate_openhands_settings
 
     systemctl daemon-reload
 

@@ -82,6 +82,40 @@ log_oh() {
 }
 
 # ==========================================================================
+#  HELPER: get_docker_bridge_ip  (Docker bridge gateway, reachable from containers)
+# ==========================================================================
+
+# Returns the Docker bridge gateway IP so that sibling containers (agent-server)
+# can reach the OpenHands main container via host.docker.internal.  The port
+# binding and Caddy reverse_proxy must use this address instead of 127.0.0.1,
+# because agent-server containers connect through the Docker bridge network.
+#
+# Detection order:
+#   1. `docker network inspect bridge` (most reliable, requires dockerd running)
+#   2. `ip addr show docker0` (works even before dockerd, reads kernel interface)
+#   3. Fallback to 172.17.0.1 (Docker's compiled-in default)
+get_docker_bridge_ip() {
+    local _ip=""
+
+    # Method 1: ask Docker daemon directly
+    _ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null)
+    if [[ "${_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "${_ip}"
+        return 0
+    fi
+
+    # Method 2: read from kernel interface (works if docker0 exists but daemon is down)
+    _ip=$(ip -4 addr show docker0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+    if [[ "${_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "${_ip}"
+        return 0
+    fi
+
+    # Method 3: Docker's compiled-in default
+    echo "172.17.0.1"
+}
+
+# ==========================================================================
 #  HELPER: get_public_ip  (resolve internet-reachable IP for endpoint)
 # ==========================================================================
 
@@ -175,9 +209,20 @@ WantedBy=multi-user.target
 UNIT_EOF
 
     # 8. Create OpenHands start wrapper
+    #    Note: single-quoted heredoc -- variables resolve at runtime, not install time.
+    #    The script detects the Docker bridge gateway IP dynamically so that
+    #    agent-server containers can reach back to OpenHands via host.docker.internal.
     cat > /usr/local/bin/openhands-start.sh <<'WRAPPER_EOF'
 #!/bin/bash
 source /etc/openhands/env
+
+# Detect Docker bridge gateway (agent-server containers connect through it)
+DOCKER_BRIDGE_IP=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null)
+if ! [[ "${DOCKER_BRIDGE_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    DOCKER_BRIDGE_IP=$(ip -4 addr show docker0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+fi
+DOCKER_BRIDGE_IP="${DOCKER_BRIDGE_IP:-172.17.0.1}"
+
 exec docker run -d --name openhands \
     --restart unless-stopped \
     -e AGENT_SERVER_IMAGE_REPOSITORY="ghcr.io/openhands/agent-server" \
@@ -188,7 +233,7 @@ exec docker run -d --name openhands \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \
     -v /opt/openhands/workspace:/opt/openhands/workspace \
-    -p 172.17.0.1:3000:3000 \
+    -p "${DOCKER_BRIDGE_IP}:3000:3000" \
     --add-host host.docker.internal:host-gateway \
     --pull=never \
     "${OH_MAIN_IMAGE}"
@@ -317,9 +362,10 @@ generate_password() {
 #  HELPER: generate_caddyfile
 # ==========================================================================
 generate_caddyfile() {
-    local _password _hash
+    local _password _hash _bridge_ip
     _password=$(cat "${OH_DATA_DIR}/password")
     _hash=$(${CADDY_BIN} hash-password --plaintext "${_password}")
+    _bridge_ip=$(get_docker_bridge_ip)
 
     if [ -n "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
         cat > "${OH_CADDYFILE}" <<CADDY_EOF
@@ -332,13 +378,13 @@ ${ONEAPP_OH_TLS_DOMAIN} {
         admin ${_hash}
     }
 
-    reverse_proxy 172.17.0.1:3000 {
+    reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0
     }
 }
 CADDY_EOF
-        log_oh info "Caddyfile generated for domain: ${ONEAPP_OH_TLS_DOMAIN}"
+        log_oh info "Caddyfile generated for domain: ${ONEAPP_OH_TLS_DOMAIN} (proxy to ${_bridge_ip}:3000)"
     else
         cat > "${OH_CADDYFILE}" <<CADDY_EOF
 {
@@ -352,13 +398,13 @@ CADDY_EOF
         admin ${_hash}
     }
 
-    reverse_proxy 172.17.0.1:3000 {
+    reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0
     }
 }
 CADDY_EOF
-        log_oh info "Caddyfile generated for self-signed TLS"
+        log_oh info "Caddyfile generated for self-signed TLS (proxy to ${_bridge_ip}:3000)"
     fi
     chmod 0600 "${OH_CADDYFILE}"
 }
@@ -519,9 +565,10 @@ HOOK_EOF
 #  HELPER: wait_for_openhands
 # ==========================================================================
 wait_for_openhands() {
-    local _timeout=120 _elapsed=0
-    log_oh info "Waiting for OpenHands readiness (timeout: ${_timeout}s)"
-    while ! curl -sf "http://172.17.0.1:3000/" >/dev/null 2>&1; do
+    local _timeout=120 _elapsed=0 _bridge_ip
+    _bridge_ip=$(get_docker_bridge_ip)
+    log_oh info "Waiting for OpenHands readiness at ${_bridge_ip}:3000 (timeout: ${_timeout}s)"
+    while ! curl -sf "http://${_bridge_ip}:3000/" >/dev/null 2>&1; do
         sleep 5
         _elapsed=$((_elapsed + 5))
         if [ "${_elapsed}" -ge "${_timeout}" ]; then
@@ -736,7 +783,7 @@ Configuration variables (set via OpenNebula context):
 
 Ports:
   443   HTTPS (Caddy reverse proxy with basic auth)
-  3000  OpenHands UI (bound to 127.0.0.1, not directly accessible)
+  3000  OpenHands UI (bound to Docker bridge, not directly accessible)
 
 Service management:
   systemctl status openhands        Check OpenHands container status

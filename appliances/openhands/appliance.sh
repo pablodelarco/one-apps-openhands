@@ -49,9 +49,9 @@ readonly OH_LOG="/var/log/one-appliance/openhands.log"
 readonly CADDY_BIN="/usr/local/bin/caddy"
 readonly CADDY_VERSION="2.11.1"
 
-# IMPORTANT: Verify exact image names/tags at build time from https://docs.all-hands.dev
-readonly OH_IMAGE="docker.all-hands.dev/all-hands-ai/openhands:0.27"
-readonly OH_RUNTIME_IMAGE="docker.all-hands.dev/all-hands-ai/runtime:0.27-nikolaik"
+# OpenHands v1.4.0 (2026-02-17) - verified from docs.openhands.dev
+readonly OH_IMAGE="docker.openhands.dev/openhands/openhands:1.4"
+readonly OH_RUNTIME_IMAGE="ghcr.io/openhands/agent-server:1.11.4-python"
 
 # ==========================================================================
 #  LOGGING: dedicated application log helpers
@@ -173,7 +173,8 @@ UNIT_EOF
 source /etc/openhands/env
 exec docker run -d --name openhands \
     --restart unless-stopped \
-    -e SANDBOX_RUNTIME_CONTAINER_IMAGE="${OH_RUNTIME}" \
+    -e AGENT_SERVER_IMAGE_REPOSITORY="ghcr.io/openhands/agent-server" \
+    -e AGENT_SERVER_IMAGE_TAG="1.11.4-python" \
     -e SANDBOX_USER_ID=1000 \
     -e WORKSPACE_BASE=/opt/openhands/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -361,7 +362,7 @@ generate_openhands_env() {
     mkdir -p /etc/openhands
     cat > "${OH_ENV_FILE}" <<ENV_EOF
 OH_MAIN_IMAGE=${OH_IMAGE}
-OH_RUNTIME=${OH_RUNTIME_IMAGE}
+# OH_RUNTIME_IMAGE used at build time for docker pull (line 132)
 ENV_EOF
     chmod 0600 "${OH_ENV_FILE}"
     log_oh info "OpenHands environment file written to ${OH_ENV_FILE}"

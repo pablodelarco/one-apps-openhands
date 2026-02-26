@@ -1,0 +1,102 @@
+# OpenHands Marketplace Metadata
+#
+# After a successful build, update these PLACEHOLDER values:
+#   1. images[0].url          -- Replace PUBLISH_URL with actual hosting URL
+#   2. images[0].checksum.md5 -- From: md5sum build/export/openhands-1.0.0.qcow2
+#   3. images[0].checksum.sha256 -- From: sha256sum build/export/openhands-1.0.0.qcow2
+#   4. images[0].size         -- From: qemu-img info --output=json build/export/openhands-1.0.0.qcow2 | jq '.["virtual-size"]'
+#   5. Rename this file to a UUID for marketplace PR: cp marketplace.yaml $(uuidgen).yaml
+#
+---
+name: OpenHands 1.0.0
+version: 1.0.0
+publisher: OpenNebula Systems
+description: |-
+  One-click AI coding agent powered by [OpenHands](https://github.com/All-Hands-AI/OpenHands)
+  (v1.4), deployed as an OpenNebula marketplace appliance. OpenHands provides a
+  web-based interface for AI-assisted software development with Docker-based
+  sandboxes for code execution, terminal access, and web browsing.
+
+  **Architecture:** Browser connects via HTTPS to a Caddy reverse proxy that
+  terminates TLS and enforces HTTP basic authentication, then proxies to the
+  OpenHands backend on localhost. OpenHands spawns isolated Docker sandbox
+  containers via the mounted Docker socket.
+
+  **Any LLM provider:** Works with Anthropic (Claude), OpenAI (GPT), Google
+  (Gemini), or any OpenAI-compatible endpoint. Pair with the
+  [SLM-Copilot](https://github.com/pablodelarco/one-apps-slm-copilot) appliance
+  for a fully sovereign deployment where no data leaves your infrastructure.
+
+  **Features:**
+  - Web-based AI coding agent with Docker sandbox execution
+  - HTTPS with auto-generated self-signed certificate (or Let's Encrypt)
+  - HTTP basic authentication with auto-generated passwords
+  - Pre-configured LLM settings via OpenNebula context variables
+  - SLM-Copilot integration for private, on-premises AI coding
+  - Workspace persistence across reboots
+  - Automatic Docker cleanup timers
+  - Idempotent reconfiguration on every boot
+short_description: >-
+  AI coding agent (OpenHands) with HTTPS, basic auth, and Docker sandboxes.
+  Any LLM provider or local SLM-Copilot. One-click deployment.
+tags:
+  - ai
+  - coding
+  - agent
+  - openhands
+  - docker
+  - caddy
+  - ubuntu
+format: qcow2
+creation_time: 1740528000
+os-id: Ubuntu
+os-release: '24.04 LTS'
+os-arch: x86_64
+hypervisor: KVM
+opennebula_version: 6.10, 7.0
+opennebula_template:
+  CONTEXT:
+    NETWORK: 'YES'
+    SSH_PUBLIC_KEY: "$USER[SSH_PUBLIC_KEY]"
+    ONEAPP_OH_LLM_API_KEY: ''
+    ONEAPP_OH_LLM_MODEL: 'anthropic/claude-sonnet-4-20250514'
+    ONEAPP_OH_LLM_BASE_URL: ''
+    ONEAPP_OH_AUTH_PASSWORD: ''
+    ONEAPP_OH_TLS_DOMAIN: ''
+  CPU: '4'
+  GRAPHICS:
+    LISTEN: 0.0.0.0
+    TYPE: vnc
+  MEMORY: '8192'
+  NIC:
+    NETWORK: service
+  NIC_DEFAULT:
+    MODEL: virtio
+  inputs_order: >-
+    ONEAPP_OH_LLM_API_KEY,
+    ONEAPP_OH_LLM_MODEL,
+    ONEAPP_OH_LLM_BASE_URL,
+    ONEAPP_OH_AUTH_PASSWORD,
+    ONEAPP_OH_TLS_DOMAIN
+  user_inputs:
+    oneapp_oh_llm_api_key: >-
+      O|password|LLM provider API key (Anthropic, OpenAI, etc.)||
+    oneapp_oh_llm_model: >-
+      O|text|LLM model identifier|anthropic/claude-sonnet-4-20250514
+    oneapp_oh_llm_base_url: >-
+      O|text|Custom LLM endpoint for SLM-Copilot or OpenAI-compatible||
+    oneapp_oh_auth_password: >-
+      O|password|Basic auth password (empty = auto-generate)||
+    oneapp_oh_tls_domain: >-
+      O|text|Domain for Let's Encrypt (empty = self-signed)||
+logo: openhands.png
+images:
+  - name: openhands_os
+    url: 'https://PUBLISH_URL/openhands-1.0.0.qcow2'
+    type: OS
+    dev_prefix: vd
+    driver: qcow2
+    size: 32212254720
+    checksum:
+      md5: PLACEHOLDER
+      sha256: PLACEHOLDER

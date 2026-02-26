@@ -1,0 +1,52 @@
+---
+:app:
+  :name: OpenHands
+  :type: image
+  :version: 1.0.0
+  :publisher: OpenNebula Systems
+  :description: AI coding agent (OpenHands) with HTTPS and basic auth
+  :url: https://github.com/pablodelarco/one-apps-openhands
+  :tags:
+    - ai
+    - coding
+    - agent
+    - openhands
+    - docker
+
+:os:
+  :type: linux
+  :base: Ubuntu 24.04 LTS
+
+:context:
+  :prefixed: ONEAPP_OH
+  :params:
+    AUTH_PASSWORD:
+      :type: password
+      :description: Basic auth password (auto-generated if empty)
+    TLS_DOMAIN:
+      :type: text
+      :description: FQDN for Let's Encrypt (self-signed if empty)
+    LLM_API_KEY:
+      :type: password
+      :description: LLM provider API key
+    LLM_MODEL:
+      :type: text
+      :default: 'anthropic/claude-sonnet-4-20250514'
+      :description: LLM model name
+    LLM_BASE_URL:
+      :type: text
+      :description: Custom LLM endpoint for SLM-Copilot or OpenAI-compatible
+
+:one:
+  :version: 6.10, 7.0
+  :template:
+    :cpu: 4
+    :memory: 8192
+    :disk: 30720
+
+:infra:
+  :disk_format: qcow2
+  :apps_path: appliances/openhands
+  :os: Ubuntu 24.04 LTS
+  :arch: x86_64
+  :hypervisor: KVM

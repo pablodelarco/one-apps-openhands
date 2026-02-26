@@ -516,12 +516,41 @@ wait_for_caddy() {
 }
 
 # ==========================================================================
+#  HELPER: validate_llm_connection
+# ==========================================================================
+validate_llm_connection() {
+    local _status="not configured"
+
+    if [ -z "${ONEAPP_OH_LLM_API_KEY:-}" ]; then
+        echo "${_status}"
+        return 0
+    fi
+
+    if [ -n "${ONEAPP_OH_LLM_BASE_URL:-}" ]; then
+        # Custom endpoint (SLM-Copilot or OpenAI-compatible) -- probe /models
+        if curl -sf --max-time 10 -k \
+            -H "Authorization: Bearer ${ONEAPP_OH_LLM_API_KEY}" \
+            "${ONEAPP_OH_LLM_BASE_URL}/models" >/dev/null 2>&1; then
+            _status="connected"
+        else
+            _status="unreachable"
+        fi
+    else
+        # Cloud provider -- just confirm API key is set
+        _status="configured (cloud: ${ONEAPP_OH_LLM_MODEL%%/*})"
+    fi
+
+    echo "${_status}"
+}
+
+# ==========================================================================
 #  HELPER: write_report_file
 # ==========================================================================
 write_report_file() {
     local _report="${ONE_SERVICE_REPORT:-/etc/one-appliance/config}"
     local _pub_ip _password _tls_mode _endpoint
     local _oh_status _caddy_status
+    local _llm_model _llm_base_url _api_key_display _llm_status _step3
 
     _pub_ip=$(get_public_ip)
     _password=$(cat "${OH_DATA_DIR}/password" 2>/dev/null || echo 'unknown')
@@ -536,6 +565,32 @@ write_report_file() {
 
     _oh_status=$(systemctl is-active openhands 2>/dev/null || echo 'unknown')
     _caddy_status=$(systemctl is-active caddy 2>/dev/null || echo 'unknown')
+
+    # LLM configuration for report
+    _llm_model="${ONEAPP_OH_LLM_MODEL:-anthropic/claude-sonnet-4-20250514}"
+
+    if [ -n "${ONEAPP_OH_LLM_API_KEY:-}" ]; then
+        local _key="${ONEAPP_OH_LLM_API_KEY}"
+        local _last4="${_key: -4}"
+        _api_key_display="****${_last4}"
+    else
+        _api_key_display="(not set)"
+    fi
+
+    if [ -n "${ONEAPP_OH_LLM_BASE_URL:-}" ]; then
+        _llm_base_url="${ONEAPP_OH_LLM_BASE_URL}"
+    else
+        _llm_base_url="(default provider endpoint)"
+    fi
+
+    _llm_status=$(validate_llm_connection)
+
+    # Contextual step 3 based on LLM configuration
+    if [ -n "${ONEAPP_OH_LLM_API_KEY:-}" ]; then
+        _step3="Your LLM is pre-configured (${_llm_model}) -- start coding"
+    else
+        _step3="Configure your LLM provider in the OpenHands settings"
+    fi
 
     mkdir -p "$(dirname "${_report}")"
     cat > "${_report}" <<REPORT_EOF
@@ -552,8 +607,14 @@ tls          = ${_tls_mode}
 [Quick start]
 1. Open https://${_endpoint} in your browser
 2. Log in with username "admin" and password above
-3. Configure your LLM provider in the OpenHands settings
+3. ${_step3}
 4. Start coding with your AI agent
+
+[LLM configuration]
+model        = ${_llm_model}
+base_url     = ${_llm_base_url}
+api_key      = ${_api_key_display}
+status       = ${_llm_status}
 
 [Workspace]
 path         = /opt/openhands/workspace (persisted across reboots)
@@ -631,6 +692,9 @@ Configuration variables (set via OpenNebula context):
   ONEAPP_OH_AUTH_PASSWORD    Basic auth password (auto-generated 16-char if empty)
   ONEAPP_OH_TLS_DOMAIN      FQDN for Let's Encrypt certificate (optional)
                              If empty, self-signed certificate is used
+  ONEAPP_OH_LLM_API_KEY     LLM provider API key (e.g. Anthropic, OpenAI)
+  ONEAPP_OH_LLM_MODEL       Model name (default: anthropic/claude-sonnet-4-20250514)
+  ONEAPP_OH_LLM_BASE_URL    Custom LLM endpoint for SLM-Copilot or OpenAI-compatible
 
 Ports:
   443   HTTPS (Caddy reverse proxy with basic auth)
@@ -649,6 +713,7 @@ Configuration files:
   /etc/caddy/Caddyfile              Caddy reverse proxy config
   /etc/ssl/openhands/cert.pem       TLS certificate (symlink)
   /etc/ssl/openhands/key.pem        TLS private key (symlink)
+  /var/lib/openhands/.openhands/settings.json  LLM configuration (auto-generated)
 
 Data directories:
   /opt/openhands/workspace          Workspace files (persisted)

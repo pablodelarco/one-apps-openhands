@@ -31,8 +31,7 @@
       :description: LLM provider API key
     LLM_MODEL:
       :type: text
-      :default: 'anthropic/claude-sonnet-4-20250514'
-      :description: LLM model name
+      :description: LLM model name (e.g. anthropic/claude-sonnet-4-20250514)
     LLM_BASE_URL:
       :type: text
       :description: Custom LLM endpoint for SLM-Copilot or OpenAI-compatible

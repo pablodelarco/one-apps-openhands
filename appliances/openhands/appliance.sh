@@ -30,7 +30,7 @@ ONE_SERVICE_PARAMS=(
     'ONEAPP_OH_AUTH_PASSWORD'  'configure' 'Basic auth password (auto-generated if empty)' ''
     'ONEAPP_OH_TLS_DOMAIN'    'configure' 'FQDN for Let'\''s Encrypt (self-signed if empty)' ''
     'ONEAPP_OH_LLM_API_KEY'   'configure' 'LLM provider API key' ''
-    'ONEAPP_OH_LLM_MODEL'     'configure' 'LLM model (e.g. anthropic/claude-sonnet-4-20250514)' 'anthropic/claude-sonnet-4-20250514'
+    'ONEAPP_OH_LLM_MODEL'     'configure' 'LLM model (e.g. anthropic/claude-sonnet-4-20250514)' ''
     'ONEAPP_OH_LLM_BASE_URL'  'configure' 'Custom LLM endpoint for SLM-Copilot or OpenAI-compatible' ''
 )
 
@@ -40,7 +40,7 @@ ONE_SERVICE_PARAMS=(
 ONEAPP_OH_AUTH_PASSWORD="${ONEAPP_OH_AUTH_PASSWORD:-}"
 ONEAPP_OH_TLS_DOMAIN="${ONEAPP_OH_TLS_DOMAIN:-}"
 ONEAPP_OH_LLM_API_KEY="${ONEAPP_OH_LLM_API_KEY:-}"
-ONEAPP_OH_LLM_MODEL="${ONEAPP_OH_LLM_MODEL:-anthropic/claude-sonnet-4-20250514}"
+ONEAPP_OH_LLM_MODEL="${ONEAPP_OH_LLM_MODEL:-}"
 ONEAPP_OH_LLM_BASE_URL="${ONEAPP_OH_LLM_BASE_URL:-}"
 
 # --------------------------------------------------------------------------
@@ -390,21 +390,25 @@ generate_openhands_settings() {
     local _settings_file="${_settings_dir}/settings.json"
     mkdir -p "${_settings_dir}"
 
-    # Build settings.json using jq for proper JSON escaping (API keys may
-    # contain shell-special characters like $, ", \, backticks).
-    jq -n \
-        --arg model "${ONEAPP_OH_LLM_MODEL}" \
-        --arg api_key "${ONEAPP_OH_LLM_API_KEY}" \
-        --arg base_url "${ONEAPP_OH_LLM_BASE_URL}" \
-        '{
+    # If no LLM context vars are set and settings.json already exists,
+    # preserve user's UI configuration (don't overwrite).
+    if [ -z "${ONEAPP_OH_LLM_MODEL:-}" ] && \
+       [ -z "${ONEAPP_OH_LLM_API_KEY:-}" ] && \
+       [ -z "${ONEAPP_OH_LLM_BASE_URL:-}" ]; then
+        if [ -f "${_settings_file}" ]; then
+            log_oh info "No LLM context vars set, preserving existing settings.json"
+            return 0
+        fi
+        # First boot with no LLM vars: write clean defaults (user configures via UI)
+        jq -n '{
             language: "en",
             agent: "CodeActAgent",
             max_iterations: null,
             security_analyzer: null,
             confirmation_mode: false,
-            llm_model: $model,
-            llm_api_key: (if $api_key == "" then null else $api_key end),
-            llm_base_url: (if $base_url == "" then null else $base_url end),
+            llm_model: null,
+            llm_api_key: null,
+            llm_base_url: null,
             remote_runtime_resource_factor: null,
             enable_default_condenser: true,
             enable_sound_notifications: false,
@@ -421,10 +425,43 @@ generate_openhands_settings() {
             secrets_store: { provider_tokens: {} },
             v1_enabled: true
         }' > "${_settings_file}"
+        log_oh info "OpenHands settings.json written (no LLM pre-configured)"
+    else
+        # LLM context vars are set: inject them into settings.json
+        jq -n \
+            --arg model "${ONEAPP_OH_LLM_MODEL}" \
+            --arg api_key "${ONEAPP_OH_LLM_API_KEY}" \
+            --arg base_url "${ONEAPP_OH_LLM_BASE_URL}" \
+            '{
+                language: "en",
+                agent: "CodeActAgent",
+                max_iterations: null,
+                security_analyzer: null,
+                confirmation_mode: false,
+                llm_model: (if $model == "" then null else $model end),
+                llm_api_key: (if $api_key == "" then null else $api_key end),
+                llm_base_url: (if $base_url == "" then null else $base_url end),
+                remote_runtime_resource_factor: null,
+                enable_default_condenser: true,
+                enable_sound_notifications: false,
+                enable_proactive_conversation_starters: true,
+                enable_solvability_analysis: true,
+                user_consents_to_analytics: null,
+                sandbox_base_container_image: null,
+                sandbox_runtime_container_image: null,
+                mcp_config: null,
+                search_api_key: null,
+                sandbox_api_key: null,
+                max_budget_per_task: null,
+                condenser_max_size: null,
+                secrets_store: { provider_tokens: {} },
+                v1_enabled: true
+            }' > "${_settings_file}"
+        log_oh info "OpenHands settings.json written (model=${ONEAPP_OH_LLM_MODEL:-not set})"
+    fi
 
     chown 1000:1000 "${_settings_dir}" "${_settings_file}"
     chmod 0600 "${_settings_file}"
-    log_oh info "OpenHands settings.json written (model=${ONEAPP_OH_LLM_MODEL})"
 }
 
 # ==========================================================================
@@ -568,7 +605,7 @@ write_report_file() {
     _caddy_status=$(systemctl is-active caddy 2>/dev/null || echo 'unknown')
 
     # LLM configuration for report
-    _llm_model="${ONEAPP_OH_LLM_MODEL:-anthropic/claude-sonnet-4-20250514}"
+    _llm_model="${ONEAPP_OH_LLM_MODEL:-(not set -- configure via UI)}"
 
     if [ -n "${ONEAPP_OH_LLM_API_KEY:-}" ]; then
         local _key="${ONEAPP_OH_LLM_API_KEY}"
@@ -694,7 +731,7 @@ Configuration variables (set via OpenNebula context):
   ONEAPP_OH_TLS_DOMAIN      FQDN for Let's Encrypt certificate (optional)
                              If empty, self-signed certificate is used
   ONEAPP_OH_LLM_API_KEY     LLM provider API key (e.g. Anthropic, OpenAI)
-  ONEAPP_OH_LLM_MODEL       Model name (default: anthropic/claude-sonnet-4-20250514)
+  ONEAPP_OH_LLM_MODEL       Model name (e.g. anthropic/claude-sonnet-4-20250514)
   ONEAPP_OH_LLM_BASE_URL    Custom LLM endpoint for SLM-Copilot or OpenAI-compatible
 
 Ports:
@@ -714,7 +751,7 @@ Configuration files:
   /etc/caddy/Caddyfile              Caddy reverse proxy config
   /etc/ssl/openhands/cert.pem       TLS certificate (symlink)
   /etc/ssl/openhands/key.pem        TLS private key (symlink)
-  /var/lib/openhands/.openhands/settings.json  LLM configuration (auto-generated)
+  /var/lib/openhands/.openhands/settings.json  LLM configuration (via UI or context vars)
 
 Data directories:
   /opt/openhands/workspace          Workspace files (persisted)

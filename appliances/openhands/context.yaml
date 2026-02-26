@@ -8,5 +8,5 @@
         ONEAPP_OH_AUTH_PASSWORD: ''
         ONEAPP_OH_TLS_DOMAIN: ''
         ONEAPP_OH_LLM_API_KEY: ''
-        ONEAPP_OH_LLM_MODEL: 'anthropic/claude-sonnet-4-20250514'
+        ONEAPP_OH_LLM_MODEL: ''
         ONEAPP_OH_LLM_BASE_URL: ''

@@ -62,7 +62,7 @@ CONTEXT = [
     NETWORK                    = "YES",
     SSH_PUBLIC_KEY              = "$USER[SSH_PUBLIC_KEY]",
     ONEAPP_OH_LLM_API_KEY      = "",
-    ONEAPP_OH_LLM_MODEL        = "anthropic/claude-sonnet-4-20250514",
+    ONEAPP_OH_LLM_MODEL        = "",
     ONEAPP_OH_LLM_BASE_URL     = "",
     ONEAPP_OH_AUTH_PASSWORD     = "",
     ONEAPP_OH_TLS_DOMAIN       = ""
@@ -100,7 +100,7 @@ All configuration is via OpenNebula context variables, set in the VM template. A
 | `ONEAPP_OH_AUTH_PASSWORD` | *(auto-generated)* | Basic auth password. Auto-generated 16-char alphanumeric if empty |
 | `ONEAPP_OH_TLS_DOMAIN` | *(empty)* | FQDN for Let's Encrypt certificate. Self-signed if empty |
 | `ONEAPP_OH_LLM_API_KEY` | *(empty)* | LLM provider API key (Anthropic, OpenAI, etc.) |
-| `ONEAPP_OH_LLM_MODEL` | `anthropic/claude-sonnet-4-20250514` | LLM model identifier |
+| `ONEAPP_OH_LLM_MODEL` | *(empty)* | LLM model identifier (e.g. `anthropic/claude-sonnet-4-20250514`) |
 | `ONEAPP_OH_LLM_BASE_URL` | *(empty)* | Custom endpoint for SLM-Copilot or OpenAI-compatible backends |
 
 ## SLM-Copilot Integration

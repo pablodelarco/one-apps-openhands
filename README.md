@@ -1,6 +1,6 @@
 # OpenHands: AI Coding Agent for OpenNebula
 
-Deploy a private AI coding agent as an OpenNebula marketplace appliance.
+[OpenHands](https://github.com/All-Hands-AI/OpenHands) is an open-source AI coding agent that provides a web-based interface for AI-assisted software development, with Docker-based sandboxes for code execution, terminal access, and web browsing. This appliance packages OpenHands as a one-click OpenNebula marketplace image with HTTPS, authentication, and support for any LLM provider.
 
 | | |
 |---|---|

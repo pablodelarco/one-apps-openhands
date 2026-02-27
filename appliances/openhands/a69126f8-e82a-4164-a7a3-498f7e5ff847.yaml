@@ -5,7 +5,6 @@
 #   2. images[0].checksum.md5 -- From: md5sum build/export/openhands-1.0.0.qcow2
 #   3. images[0].checksum.sha256 -- From: sha256sum build/export/openhands-1.0.0.qcow2
 #   4. images[0].size         -- From: qemu-img info --output=json build/export/openhands-1.0.0.qcow2 | jq '.["virtual-size"]'
-#   5. Rename this file to a UUID for marketplace PR: cp marketplace.yaml $(uuidgen).yaml
 #
 ---
 name: OpenHands 1.0.0
@@ -23,8 +22,8 @@ description: |-
   containers via the mounted Docker socket.
 
   **Any LLM provider:** Works with Anthropic (Claude), OpenAI (GPT), Google
-  (Gemini), or any OpenAI-compatible endpoint. Pair with the
-  any OpenAI-compatible endpoint for a fully private deployment where no
+  (Gemini), or any OpenAI-compatible endpoint. Pair with a local
+  OpenAI-compatible endpoint for a fully private deployment where no
   data leaves your infrastructure.
 
   **Features:**
@@ -84,7 +83,7 @@ opennebula_template:
     oneapp_oh_llm_model: >-
       O|text|LLM model identifier (e.g. anthropic/claude-sonnet-4-20250514)||
     oneapp_oh_llm_base_url: >-
-      O|text|Custom LLM endpoint for OpenAI-compatible endpoint or OpenAI-compatible||
+      O|text|Custom LLM endpoint (OpenAI-compatible)||
     oneapp_oh_auth_password: >-
       O|password|Basic auth password (empty = auto-generate)||
     oneapp_oh_tls_domain: >-

@@ -49,7 +49,7 @@ source "qemu" "openhands" {
   ssh_timeout      = "15m"
   ssh_wait_timeout = "900s"
 
-  shutdown_command = "poweroff"
+  shutdown_command = "sync && fstrim -av; shutdown -P now"
 }
 
 build {
@@ -142,6 +142,7 @@ build {
       "truncate -s 0 /etc/machine-id",
       "rm -f /var/lib/dbus/machine-id",
       "rm -rf /tmp/* /var/tmp/*",
+      "fstrim -av || true",
       "sync",
     ]
   }

@@ -1,13 +1,13 @@
 # OpenHands: AI Coding Agent for OpenNebula
 
-Deploy a private AI coding agent with zero external dependencies when paired with SLM-Copilot.
+Deploy a private AI coding agent as an OpenNebula marketplace appliance.
 
 | | |
 |---|---|
 | **Agent** | OpenHands 1.4 (open-source AI coding agent) |
 | **Execution** | Docker-based sandboxes (code, terminal, browser) |
 | **Security** | HTTPS + HTTP basic auth via Caddy reverse proxy |
-| **LLM** | Any provider (Claude, GPT, Gemini) or local SLM-Copilot |
+| **LLM** | Any provider (Claude, GPT, Gemini) or OpenAI-compatible endpoint |
 | **License** | MIT (OpenHands), Apache 2.0 (Caddy) |
 
 ## Architecture
@@ -27,19 +27,6 @@ Developer Browser            OpenNebula VM (8+ GB RAM, 4+ vCPU)
 ```
 
 Browser connects via HTTPS to Caddy on port 443. Caddy terminates TLS, enforces HTTP basic authentication (username "admin"), and proxies to OpenHands on localhost:3000. OpenHands spawns Docker sandbox containers via the mounted Docker socket for isolated code execution, terminal access, and web browsing.
-
-### SLM-Copilot integration
-
-```
-OpenHands VM                  SLM-Copilot VM
-+---------------+             +------------------+
-| OpenHands     |   HTTPS     | llama-server     |
-| (agent)       |------------>| Devstral 24B     |
-| LLM_BASE_URL  |   :8443    | (CPU inference)  |
-+---------------+             +------------------+
-```
-
-When paired with SLM-Copilot, OpenHands sends LLM requests to a local llama-server instance over HTTPS. No data leaves your infrastructure.
 
 ## Quick Start
 
@@ -101,25 +88,7 @@ All configuration is via OpenNebula context variables, set in the VM template. A
 | `ONEAPP_OH_TLS_DOMAIN` | *(empty)* | FQDN for Let's Encrypt certificate. Self-signed if empty |
 | `ONEAPP_OH_LLM_API_KEY` | *(empty)* | LLM provider API key (Anthropic, OpenAI, etc.) |
 | `ONEAPP_OH_LLM_MODEL` | *(empty)* | LLM model identifier (e.g. `anthropic/claude-sonnet-4-20250514`) |
-| `ONEAPP_OH_LLM_BASE_URL` | *(empty)* | Custom endpoint for SLM-Copilot or OpenAI-compatible backends |
-
-## SLM-Copilot Integration
-
-Sovereign deployment: OpenHands VM + SLM-Copilot VM = fully private AI development with no cloud API dependencies. All code and data stay within your infrastructure.
-
-### Setup
-
-1. **Deploy a SLM-Copilot VM** (separate appliance from the OpenNebula marketplace)
-2. **Note the endpoint and API key** from the SLM-Copilot report file:
-   ```bash
-   ssh root@<slm-copilot-ip> cat /etc/one-appliance/config
-   ```
-3. **Set OpenHands context variables** in the VM template:
-   - `ONEAPP_OH_LLM_BASE_URL` = `https://<slm-copilot-ip>:8443/v1`
-   - `ONEAPP_OH_LLM_API_KEY` = `<slm-copilot-api-key>`
-   - `ONEAPP_OH_LLM_MODEL` = `devstral-small-2`
-4. **Boot or reboot** the OpenHands VM
-5. OpenHands auto-configures to use SLM-Copilot as its LLM backend (SSL verification is disabled automatically for self-signed certificates when a custom base URL is set)
+| `ONEAPP_OH_LLM_BASE_URL` | *(empty)* | Custom endpoint (OpenAI-compatible) |
 
 ## Testing
 

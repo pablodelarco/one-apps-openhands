@@ -10,7 +10,6 @@ All notable changes to the OpenHands appliance will be documented in this file.
 - Caddy reverse proxy with automatic TLS (self-signed or Let's Encrypt)
 - HTTP basic authentication with auto-generated passwords
 - Context variables for LLM provider configuration (API key, model, base URL)
-- SLM-Copilot integration for private on-premises AI coding
 - Workspace persistence across reboots at /opt/openhands/workspace
 - Automatic Docker cleanup timers
 - Pre-built sandbox runtime image for reliable operation

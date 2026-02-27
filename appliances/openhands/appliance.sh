@@ -31,7 +31,7 @@ ONE_SERVICE_PARAMS=(
     'ONEAPP_OH_TLS_DOMAIN'    'configure' 'FQDN for Let'\''s Encrypt (self-signed if empty)' ''
     'ONEAPP_OH_LLM_API_KEY'   'configure' 'LLM provider API key' ''
     'ONEAPP_OH_LLM_MODEL'     'configure' 'LLM model (e.g. anthropic/claude-sonnet-4-20250514)' ''
-    'ONEAPP_OH_LLM_BASE_URL'  'configure' 'Custom LLM endpoint for SLM-Copilot or OpenAI-compatible' ''
+    'ONEAPP_OH_LLM_BASE_URL'  'configure' 'Custom LLM endpoint (OpenAI-compatible)' ''
 )
 
 # --------------------------------------------------------------------------
@@ -423,7 +423,7 @@ OH_MAIN_IMAGE=${OH_IMAGE}
 # OH_RUNTIME_IMAGE used at build time for docker pull (line 132)
 ENV_EOF
 
-    # Add SSL bypass when custom base URL is set (SLM-Copilot uses self-signed certs)
+    # Add SSL bypass when custom base URL is set (self-signed certs)
     if [ -n "${ONEAPP_OH_LLM_BASE_URL:-}" ]; then
         echo "SSL_VERIFY=False" >> "${OH_ENV_FILE}"
     fi
@@ -618,7 +618,7 @@ validate_llm_connection() {
     fi
 
     if [ -n "${ONEAPP_OH_LLM_BASE_URL:-}" ]; then
-        # Custom endpoint (SLM-Copilot or OpenAI-compatible) -- probe /models
+        # Custom endpoint (OpenAI-compatible) -- probe /models
         if curl -sf --max-time 10 -k \
             -H "Authorization: Bearer ${ONEAPP_OH_LLM_API_KEY}" \
             "${ONEAPP_OH_LLM_BASE_URL}/models" >/dev/null 2>&1; then
@@ -785,7 +785,7 @@ Configuration variables (set via OpenNebula context):
                              If empty, self-signed certificate is used
   ONEAPP_OH_LLM_API_KEY     LLM provider API key (e.g. Anthropic, OpenAI)
   ONEAPP_OH_LLM_MODEL       Model name (e.g. anthropic/claude-sonnet-4-20250514)
-  ONEAPP_OH_LLM_BASE_URL    Custom LLM endpoint for SLM-Copilot or OpenAI-compatible
+  ONEAPP_OH_LLM_BASE_URL    Custom LLM endpoint (OpenAI-compatible)
 
 Ports:
   443   HTTPS (Caddy reverse proxy with basic auth)

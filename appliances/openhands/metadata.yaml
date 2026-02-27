@@ -34,7 +34,7 @@
       :description: LLM model name (e.g. anthropic/claude-sonnet-4-20250514)
     LLM_BASE_URL:
       :type: text
-      :description: Custom LLM endpoint for SLM-Copilot or OpenAI-compatible
+      :description: Custom LLM endpoint (OpenAI-compatible)
 
 :one:
   :version: 6.10, 7.0

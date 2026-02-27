@@ -24,21 +24,21 @@ description: |-
 
   **Any LLM provider:** Works with Anthropic (Claude), OpenAI (GPT), Google
   (Gemini), or any OpenAI-compatible endpoint. Pair with the
-  [SLM-Copilot](https://github.com/pablodelarco/one-apps-slm-copilot) appliance
-  for a fully sovereign deployment where no data leaves your infrastructure.
+  any OpenAI-compatible endpoint for a fully private deployment where no
+  data leaves your infrastructure.
 
   **Features:**
   - Web-based AI coding agent with Docker sandbox execution
   - HTTPS with auto-generated self-signed certificate (or Let's Encrypt)
   - HTTP basic authentication with auto-generated passwords
   - Pre-configured LLM settings via OpenNebula context variables
-  - SLM-Copilot integration for private, on-premises AI coding
+  - OpenAI-compatible endpoint integration for private, on-premises AI coding
   - Workspace persistence across reboots
   - Automatic Docker cleanup timers
   - Idempotent reconfiguration on every boot
 short_description: >-
   AI coding agent (OpenHands) with HTTPS, basic auth, and Docker sandboxes.
-  Any LLM provider or local SLM-Copilot. One-click deployment.
+  Any LLM provider or local OpenAI-compatible endpoint. One-click deployment.
 tags:
   - ai
   - coding
@@ -84,7 +84,7 @@ opennebula_template:
     oneapp_oh_llm_model: >-
       O|text|LLM model identifier (e.g. anthropic/claude-sonnet-4-20250514)||
     oneapp_oh_llm_base_url: >-
-      O|text|Custom LLM endpoint for SLM-Copilot or OpenAI-compatible||
+      O|text|Custom LLM endpoint for OpenAI-compatible endpoint or OpenAI-compatible||
     oneapp_oh_auth_password: >-
       O|password|Basic auth password (empty = auto-generate)||
     oneapp_oh_tls_domain: >-

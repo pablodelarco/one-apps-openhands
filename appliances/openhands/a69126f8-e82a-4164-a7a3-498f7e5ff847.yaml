@@ -11,10 +11,12 @@ name: OpenHands 1.0.0
 version: 1.0.0
 publisher: OpenNebula Systems
 description: |-
-  One-click AI coding agent powered by [OpenHands](https://github.com/All-Hands-AI/OpenHands)
-  (v1.4), deployed as an OpenNebula marketplace appliance. OpenHands provides a
-  web-based interface for AI-assisted software development with Docker-based
-  sandboxes for code execution, terminal access, and web browsing.
+  [OpenHands](https://github.com/All-Hands-AI/OpenHands) is an open-source AI
+  coding agent that provides a web-based interface for AI-assisted software
+  development, with Docker-based sandboxes for code execution, terminal access,
+  and web browsing. This appliance packages OpenHands (v1.4) as a one-click
+  OpenNebula marketplace image with HTTPS, authentication, and support for any
+  LLM provider.
 
   **Architecture:** Browser connects via HTTPS to a Caddy reverse proxy that
   terminates TLS and enforces HTTP basic authentication, then proxies to the

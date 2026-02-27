@@ -58,6 +58,8 @@ readonly CADDY_VERSION="2.11.1"
 # OpenHands v1.4.0 (2026-02-17) - verified from docs.openhands.dev
 readonly OH_IMAGE="docker.openhands.dev/openhands/openhands:1.4"
 readonly OH_RUNTIME_IMAGE="ghcr.io/openhands/agent-server:1.11.4-python"
+# Pre-built sandbox runtime - avoids build-time apt-get failures in nested virt
+readonly OH_SANDBOX_RUNTIME_IMAGE="ghcr.io/openhands/runtime:1.4-nikolaik"
 
 # ==========================================================================
 #  LOGGING: dedicated application log helpers
@@ -171,8 +173,10 @@ service_install() {
     log_oh info "Pre-pulling OpenHands images (this may take a while)"
     docker pull "${OH_IMAGE}"
     docker pull "${OH_RUNTIME_IMAGE}"
+    docker pull "${OH_SANDBOX_RUNTIME_IMAGE}"
     log_oh info "Main image size: $(docker image inspect "${OH_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
     log_oh info "Runtime image size: $(docker image inspect "${OH_RUNTIME_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
+    log_oh info "Sandbox runtime image size: $(docker image inspect "${OH_SANDBOX_RUNTIME_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
 
     # 5. Create openhands user and directories
     log_oh info "Creating openhands user and directories"
@@ -446,7 +450,7 @@ generate_openhands_settings() {
             return 0
         fi
         # First boot with no LLM vars: write clean defaults (user configures via UI)
-        jq -n '{
+        jq -n --arg sandbox_img "${OH_SANDBOX_RUNTIME_IMAGE}" '{
             language: "en",
             agent: "CodeActAgent",
             max_iterations: null,
@@ -462,7 +466,7 @@ generate_openhands_settings() {
             enable_solvability_analysis: true,
             user_consents_to_analytics: null,
             sandbox_base_container_image: null,
-            sandbox_runtime_container_image: null,
+            sandbox_runtime_container_image: $sandbox_img,
             mcp_config: null,
             search_api_key: null,
             sandbox_api_key: null,
@@ -478,6 +482,7 @@ generate_openhands_settings() {
             --arg model "${ONEAPP_OH_LLM_MODEL}" \
             --arg api_key "${ONEAPP_OH_LLM_API_KEY}" \
             --arg base_url "${ONEAPP_OH_LLM_BASE_URL}" \
+            --arg sandbox_img "${OH_SANDBOX_RUNTIME_IMAGE}" \
             '{
                 language: "en",
                 agent: "CodeActAgent",
@@ -494,7 +499,7 @@ generate_openhands_settings() {
                 enable_solvability_analysis: true,
                 user_consents_to_analytics: null,
                 sandbox_base_container_image: null,
-                sandbox_runtime_container_image: null,
+                sandbox_runtime_container_image: $sandbox_img,
                 mcp_config: null,
                 search_api_key: null,
                 sandbox_api_key: null,

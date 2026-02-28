@@ -473,7 +473,7 @@ generate_openhands_settings() {
             max_budget_per_task: null,
             condenser_max_size: null,
             secrets_store: { provider_tokens: {} },
-            v1_enabled: true
+            v1_enabled: false
         }' > "${_settings_file}"
         log_oh info "OpenHands settings.json written (no LLM pre-configured)"
     else
@@ -506,7 +506,7 @@ generate_openhands_settings() {
                 max_budget_per_task: null,
                 condenser_max_size: null,
                 secrets_store: { provider_tokens: {} },
-                v1_enabled: true
+                v1_enabled: false
             }' > "${_settings_file}"
         log_oh info "OpenHands settings.json written (model=${ONEAPP_OH_LLM_MODEL:-not set})"
     fi
@@ -740,6 +740,17 @@ service_bootstrap() {
     systemctl enable openhands.service
     systemctl start openhands.service
     wait_for_openhands
+
+    # Patch: disable V1 mode hardcoded override in OpenHands 1.4 source
+    # V1 agent-server containers lack Docker socket access in self-hosted mode,
+    # causing conversations to get stuck. V0 mode works correctly.
+    docker exec openhands sed -i \
+        's/settings.v1_enabled = True/settings.v1_enabled = False/' \
+        /app/openhands/storage/settings/file_settings_store.py 2>/dev/null \
+        && docker restart openhands \
+        && wait_for_openhands \
+        && log_oh info "V1 mode disabled (agent-server Docker socket fix)" \
+        || log_oh warn "V1 patch skipped (may not be needed in future versions)"
 
     # Start Caddy reverse proxy
     systemctl enable caddy.service

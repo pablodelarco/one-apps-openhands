@@ -234,7 +234,6 @@ exec docker run -d --name openhands \
     -e SANDBOX_USER_ID=1000 \
     -e WORKSPACE_BASE=/opt/openhands/workspace \
     -e OH_SANDBOX_USE_HOST_NETWORK=true \
-    -e SANDBOX_VSCODE_PORT=41234 \
     ${SSL_VERIFY:+-e SSL_VERIFY="${SSL_VERIFY}"} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \
@@ -395,13 +394,6 @@ ${ONEAPP_OH_TLS_DOMAIN} {
             flush_interval -1
         }
     }
-    # Code editor (VSCode server in sandbox)
-    handle_path /vscode/* {
-        reverse_proxy 127.0.0.1:41234 {
-            flush_interval -1
-        }
-    }
-
     reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0
@@ -433,13 +425,6 @@ CADDY_EOF
             flush_interval -1
         }
     }
-    # Code editor (VSCode server in sandbox)
-    handle_path /vscode/* {
-        reverse_proxy 127.0.0.1:41234 {
-            flush_interval -1
-        }
-    }
-
     reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0

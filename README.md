@@ -78,6 +78,38 @@ Leave `ONEAPP_OH_AUTH_PASSWORD` empty for auto-generation.
    make test ENDPOINT=https://<vm-ip> PASSWORD=<password>
    ```
 
+## Accessing OpenHands
+
+### Same network
+
+If your laptop is on the same network as the VM, open `https://<vm-ip>` directly in your browser.
+
+### Remote access via SSH tunnel
+
+When the VM is behind a private network or firewall, create an SSH tunnel through the hypervisor host:
+
+```bash
+ssh -L 8443:<vm-ip>:443 user@hypervisor-host
+```
+
+Then open `https://localhost:8443` in your browser. Accept the self-signed certificate warning.
+
+### Port forwarding / NAT
+
+To expose the VM externally, forward a public port to the VM's port 443:
+
+```bash
+# On the host/gateway (example using iptables)
+iptables -t nat -A PREROUTING -p tcp --dport 9443 -j DNAT --to-destination <vm-ip>:443
+iptables -A FORWARD -p tcp -d <vm-ip> --dport 443 -j ACCEPT
+```
+
+Then access via `https://<host-public-ip>:9443`.
+
+### Web preview and code editor
+
+The sandbox web preview (ports 8011/8012) and the built-in code editor (VSCode) are proxied through the same HTTPS URL, so they work without additional port forwarding or cross-origin issues.
+
 ## Configuration
 
 All configuration is via OpenNebula context variables, set in the VM template. All variables are re-read on every boot -- change a value and reboot to apply.

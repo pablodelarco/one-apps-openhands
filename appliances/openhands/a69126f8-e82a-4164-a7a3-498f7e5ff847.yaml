@@ -34,6 +34,7 @@ description: |-
   - HTTP basic authentication with auto-generated passwords
   - Pre-configured LLM settings via OpenNebula context variables
   - OpenAI-compatible endpoint integration for private, on-premises AI coding
+  - Web app preview and code editor proxied through the same HTTPS origin
   - Workspace persistence across reboots
   - Automatic Docker cleanup timers
   - Idempotent reconfiguration on every boot

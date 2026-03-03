@@ -233,6 +233,8 @@ exec docker run -d --name openhands \
     -e AGENT_SERVER_IMAGE_TAG="1.11.4-python" \
     -e SANDBOX_USER_ID=1000 \
     -e WORKSPACE_BASE=/opt/openhands/workspace \
+    -e OH_SANDBOX_USE_HOST_NETWORK=true \
+    -e SANDBOX_VSCODE_PORT=41234 \
     ${SSL_VERIFY:+-e SSL_VERIFY="${SSL_VERIFY}"} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \
@@ -382,6 +384,24 @@ ${ONEAPP_OH_TLS_DOMAIN} {
         admin ${_hash}
     }
 
+    # Web app preview (sandbox worker ports)
+    handle_path /proxy/8011/* {
+        reverse_proxy 127.0.0.1:8011 {
+            flush_interval -1
+        }
+    }
+    handle_path /proxy/8012/* {
+        reverse_proxy 127.0.0.1:8012 {
+            flush_interval -1
+        }
+    }
+    # Code editor (VSCode server in sandbox)
+    handle_path /vscode/* {
+        reverse_proxy 127.0.0.1:41234 {
+            flush_interval -1
+        }
+    }
+
     reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0
@@ -400,6 +420,24 @@ CADDY_EOF
 
     basicauth /* {
         admin ${_hash}
+    }
+
+    # Web app preview (sandbox worker ports)
+    handle_path /proxy/8011/* {
+        reverse_proxy 127.0.0.1:8011 {
+            flush_interval -1
+        }
+    }
+    handle_path /proxy/8012/* {
+        reverse_proxy 127.0.0.1:8012 {
+            flush_interval -1
+        }
+    }
+    # Code editor (VSCode server in sandbox)
+    handle_path /vscode/* {
+        reverse_proxy 127.0.0.1:41234 {
+            flush_interval -1
+        }
     }
 
     reverse_proxy ${_bridge_ip}:3000 {

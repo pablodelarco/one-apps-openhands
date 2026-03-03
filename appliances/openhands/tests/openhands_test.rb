@@ -44,7 +44,7 @@ RSpec.describe 'OpenHands Appliance' do
 
   it 'has the report file with connection info' do
     result = @app.execute('cat /etc/one-appliance/config')
-    expect(result).to include('endpoint')
+    expect(result).to include('url')
     expect(result).to include('password')
   end
 end

@@ -34,7 +34,8 @@ RSpec.describe 'OpenHands Appliance' do
       "curl -sk -u admin:#{password} https://localhost/api/conversations"
     )
     parsed = JSON.parse(result)
-    expect(parsed).to be_a(Array)
+    expect(parsed).to be_a(Hash)
+    expect(parsed).to have_key('results')
   end
 
   it 'has the workspace directory' do

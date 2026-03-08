@@ -118,26 +118,6 @@ get_docker_bridge_ip() {
 }
 
 # ==========================================================================
-#  HELPER: get_public_ip  (resolve internet-reachable IP for endpoint)
-# ==========================================================================
-
-# Returns the public IP of this VM so that remote users can connect.
-# Tries external lookup services first (the VM may be behind NAT),
-# falls back to the first local IP if external lookup fails.
-get_public_ip() {
-    local _pub_ip=""
-    for _svc in "https://ifconfig.me" "https://api.ipify.org" "https://icanhazip.com"; do
-        _pub_ip=$(curl -sf --max-time 5 "${_svc}" 2>/dev/null | tr -d '[:space:]')
-        if [[ "${_pub_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "${_pub_ip}"
-            return 0
-        fi
-    done
-    # Fallback: local IP (private network, may not be reachable from internet)
-    hostname -I 2>/dev/null | awk '{print $1}'
-}
-
-# ==========================================================================
 #  LIFECYCLE: service_install  (Packer build-time, runs once)
 # ==========================================================================
 service_install() {
@@ -298,20 +278,15 @@ UNIT_EOF
     cat > /etc/profile.d/openhands-banner.sh <<'BANNER_EOF'
 #!/bin/bash
 [[ $- == *i* ]] || return
-_pub_ip=""
-for _svc in "https://ifconfig.me" "https://api.ipify.org" "https://icanhazip.com"; do
-    _pub_ip=$(curl -sf --max-time 3 "${_svc}" 2>/dev/null | tr -d '[:space:]')
-    [[ "${_pub_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && break
-    _pub_ip=""
-done
-_vm_ip="${_pub_ip:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+_local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
 _password=$(cat /var/lib/openhands/password 2>/dev/null || echo 'see report')
 _oh=$(systemctl is-active openhands 2>/dev/null || echo 'unknown')
 _caddy=$(systemctl is-active caddy 2>/dev/null || echo 'unknown')
 printf '\n'
 printf '  OpenHands -- AI Coding Agent\n'
 printf '  ============================\n'
-printf '  Endpoint : https://%s\n' "${_vm_ip}"
+printf '  Local IP : %s\n' "${_local_ip}"
+printf '  Endpoint : https://%s\n' "${_local_ip}"
 printf '  Password : %s\n' "${_password}"
 printf '  OpenHands: %s\n' "${_oh}"
 printf '  Caddy    : %s\n' "${_caddy}"
@@ -666,7 +641,7 @@ write_report_file() {
     local _oh_status _caddy_status
     local _llm_model _llm_base_url _api_key_display _llm_status _step3
 
-    _pub_ip=$(get_public_ip)
+    _pub_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     _password=$(cat "${OH_DATA_DIR}/password" 2>/dev/null || echo 'unknown')
 
     if [ -n "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
@@ -790,7 +765,7 @@ service_bootstrap() {
     if [ -n "${ONEAPP_OH_TLS_DOMAIN:-}" ]; then
         _endpoint="${ONEAPP_OH_TLS_DOMAIN}"
     else
-        _endpoint=$(get_public_ip)
+        _endpoint=$(hostname -I 2>/dev/null | awk '{print $1}')
     fi
     log_oh info "=== service_bootstrap complete ==="
     log_oh info "OpenHands available at https://${_endpoint}"

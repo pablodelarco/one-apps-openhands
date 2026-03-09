@@ -18,9 +18,9 @@ build {
 source "qemu" "openhands" {
   accelerator = "kvm"
 
-  cpus      = 2
-  memory    = 4096
-  disk_size = "30G"
+  cpus      = 4
+  memory    = 8192
+  disk_size = "60G"
 
   iso_url      = "${var.input_dir}/ubuntu2404.qcow2"
   iso_checksum = "none"

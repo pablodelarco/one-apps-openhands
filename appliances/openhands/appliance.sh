@@ -213,7 +213,7 @@ exec docker run -d --name openhands \
     -e AGENT_SERVER_IMAGE_TAG="1.11.4-python" \
     -e SANDBOX_USER_ID=1000 \
     -e WORKSPACE_BASE=/opt/openhands/workspace \
-    -e OH_SANDBOX_USE_HOST_NETWORK=true \
+    -e SANDBOX_USE_HOST_NETWORK=true \
     ${SSL_VERIFY:+-e SSL_VERIFY="${SSL_VERIFY}"} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \

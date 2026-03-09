@@ -158,6 +158,36 @@ service_install() {
     log_oh info "Runtime image size: $(docker image inspect "${OH_RUNTIME_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
     log_oh info "Sandbox runtime image size: $(docker image inspect "${OH_SANDBOX_RUNTIME_IMAGE}" --format='{{.Size}}' | numfmt --to=iec 2>/dev/null || echo 'unknown')"
 
+    # 4b. Patch docker_runtime.py for proxy-style web preview URLs
+    #     OpenHands returns http://localhost:PORT for web preview, which fails
+    #     for remote deployments behind a reverse proxy. This patch adds support
+    #     for OPENHANDS_PROXY_BASE env var to return /proxy/PORT URLs instead.
+    log_oh info "Patching docker_runtime.py for proxy-style web preview URLs"
+    mkdir -p /opt/openhands/patches
+    docker create --name oh-extract "${OH_IMAGE}" true
+    docker cp oh-extract:/app/openhands/runtime/impl/docker/docker_runtime.py \
+        /opt/openhands/patches/docker_runtime.py
+    docker rm oh-extract
+    python3 -c "
+f = '/opt/openhands/patches/docker_runtime.py'
+with open(f) as fh: c = fh.read()
+old = '''        host_addr = os.environ.get('DOCKER_HOST_ADDR', 'localhost')
+        for port in self._app_ports:
+            hosts[f'http://{host_addr}:{port}'] = port'''
+new = '''        proxy_base = os.environ.get('OPENHANDS_PROXY_BASE', '')
+        if proxy_base:
+            for port in self._app_ports:
+                hosts[f'{proxy_base}/proxy/{port}'] = port
+        else:
+            host_addr = os.environ.get('DOCKER_HOST_ADDR', 'localhost')
+            for port in self._app_ports:
+                hosts[f'http://{host_addr}:{port}'] = port'''
+assert old in c, 'Patch target not found in docker_runtime.py'
+with open(f, 'w') as fh: fh.write(c.replace(old, new))
+print('Patched successfully')
+"
+    chmod 644 /opt/openhands/patches/docker_runtime.py
+
     # 5. Create openhands user and directories
     log_oh info "Creating openhands user and directories"
     useradd -r -m -u 1000 -d /var/lib/openhands -s /usr/sbin/nologin openhands
@@ -207,6 +237,10 @@ if ! [[ "${DOCKER_BRIDGE_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 DOCKER_BRIDGE_IP="${DOCKER_BRIDGE_IP:-172.17.0.1}"
 
+# Determine proxy base URL from VM IP (for web preview through Caddy)
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+PROXY_BASE="https://${LOCAL_IP}"
+
 exec docker run -d --name openhands \
     --restart unless-stopped \
     -e AGENT_SERVER_IMAGE_REPOSITORY="ghcr.io/openhands/agent-server" \
@@ -214,10 +248,12 @@ exec docker run -d --name openhands \
     -e SANDBOX_USER_ID=1000 \
     -e WORKSPACE_BASE=/opt/openhands/workspace \
     -e SANDBOX_USE_HOST_NETWORK=true \
+    -e OPENHANDS_PROXY_BASE="${PROXY_BASE}" \
     ${SSL_VERIFY:+-e SSL_VERIFY="${SSL_VERIFY}"} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/openhands/.openhands:/.openhands \
     -v /opt/openhands/workspace:/opt/openhands/workspace \
+    -v /opt/openhands/patches/docker_runtime.py:/app/openhands/runtime/impl/docker/docker_runtime.py:ro \
     -p "${DOCKER_BRIDGE_IP}:3000:3000" \
     --add-host host.docker.internal:host-gateway \
     --pull=never \

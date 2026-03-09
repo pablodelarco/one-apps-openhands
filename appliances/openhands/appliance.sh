@@ -188,6 +188,20 @@ print('Patched successfully')
 "
     chmod 644 /opt/openhands/patches/docker_runtime.py
 
+    # 4c. Patch file_settings_store.py to disable V1 mode
+    #     V1 agent-server containers lack Docker socket access in self-hosted mode,
+    #     causing conversations to get stuck. V0 mode works correctly.
+    #     Volume-mounted so the patch persists across container restarts.
+    log_oh info "Patching file_settings_store.py to disable V1 mode"
+    docker create --name oh-extract-v1 "${OH_IMAGE}" true
+    docker cp oh-extract-v1:/app/openhands/storage/settings/file_settings_store.py \
+        /opt/openhands/patches/file_settings_store.py
+    docker rm oh-extract-v1
+    sed -i 's/settings.v1_enabled = True/settings.v1_enabled = False/' \
+        /opt/openhands/patches/file_settings_store.py
+    chmod 644 /opt/openhands/patches/file_settings_store.py
+    log_oh info "V1 mode disabled in file_settings_store.py"
+
     # 5. Create openhands user and directories
     log_oh info "Creating openhands user and directories"
     useradd -r -m -u 1000 -d /var/lib/openhands -s /usr/sbin/nologin openhands
@@ -254,6 +268,7 @@ exec docker run -d --name openhands \
     -v /var/lib/openhands/.openhands:/.openhands \
     -v /opt/openhands/workspace:/opt/openhands/workspace \
     -v /opt/openhands/patches/docker_runtime.py:/app/openhands/runtime/impl/docker/docker_runtime.py:ro \
+    -v /opt/openhands/patches/file_settings_store.py:/app/openhands/storage/settings/file_settings_store.py:ro \
     -p "${DOCKER_BRIDGE_IP}:3000:3000" \
     --add-host host.docker.internal:host-gateway \
     --pull=never \
@@ -773,16 +788,8 @@ service_bootstrap() {
     systemctl start openhands.service
     wait_for_openhands
 
-    # Patch: disable V1 mode hardcoded override in OpenHands 1.4 source
-    # V1 agent-server containers lack Docker socket access in self-hosted mode,
-    # causing conversations to get stuck. V0 mode works correctly.
-    docker exec openhands sed -i \
-        's/settings.v1_enabled = True/settings.v1_enabled = False/' \
-        /app/openhands/storage/settings/file_settings_store.py 2>/dev/null \
-        && docker restart openhands \
-        && wait_for_openhands \
-        && log_oh info "V1 mode disabled (agent-server Docker socket fix)" \
-        || log_oh warn "V1 patch skipped (may not be needed in future versions)"
+    # Note: V1 mode disabled via volume-mounted file_settings_store.py patch
+    # (applied at build time in service_install step 4c)
 
     # Start Caddy reverse proxy
     systemctl enable caddy.service

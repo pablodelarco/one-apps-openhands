@@ -358,17 +358,16 @@ ${ONEAPP_OH_TLS_DOMAIN} {
         admin ${_hash}
     }
 
-    # Web app preview (sandbox worker ports)
-    handle_path /proxy/8011/* {
-        reverse_proxy 127.0.0.1:8011 {
+    # Dynamic proxy for any sandbox port (web preview, dev servers)
+    @proxy path_regexp proxy ^/proxy/(\d+)(.*)
+    handle @proxy {
+        uri strip_prefix /proxy/{re.proxy.1}
+        reverse_proxy 127.0.0.1:{re.proxy.1} {
             flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
         }
     }
-    handle_path /proxy/8012/* {
-        reverse_proxy 127.0.0.1:8012 {
-            flush_interval -1
-        }
-    }
+
     reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0
@@ -389,17 +388,16 @@ CADDY_EOF
         admin ${_hash}
     }
 
-    # Web app preview (sandbox worker ports)
-    handle_path /proxy/8011/* {
-        reverse_proxy 127.0.0.1:8011 {
+    # Dynamic proxy for any sandbox port (web preview, dev servers)
+    @proxy path_regexp proxy ^/proxy/(\d+)(.*)
+    handle @proxy {
+        uri strip_prefix /proxy/{re.proxy.1}
+        reverse_proxy 127.0.0.1:{re.proxy.1} {
             flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
         }
     }
-    handle_path /proxy/8012/* {
-        reverse_proxy 127.0.0.1:8012 {
-            flush_interval -1
-        }
-    }
+
     reverse_proxy ${_bridge_ip}:3000 {
         flush_interval -1
         stream_timeout 0

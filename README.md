@@ -39,3 +39,7 @@ Browser connects via HTTPS to Caddy (port 443), which terminates TLS and enforce
 ## License
 
 MIT (OpenHands), Apache 2.0 (Caddy, one-apps).
+
+## Author
+
+Pablo del Arco, [OpenNebula Systems](https://opennebula.io).

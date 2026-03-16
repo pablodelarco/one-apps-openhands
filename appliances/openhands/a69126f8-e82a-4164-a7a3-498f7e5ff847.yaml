@@ -40,7 +40,7 @@ description: |-
   - Idempotent reconfiguration on every boot
 short_description: >-
   AI coding agent (OpenHands) with HTTPS, basic auth, and Docker sandboxes.
-  Any LLM provider or local OpenAI-compatible endpoint. One-click deployment.
+  Any LLM provider supported.
 tags:
   - ai
   - coding
@@ -74,22 +74,22 @@ opennebula_template:
     NETWORK: service
   NIC_DEFAULT:
     MODEL: virtio
-  inputs_order: >-
+  INPUTS_ORDER: >-
     ONEAPP_OH_LLM_API_KEY,
     ONEAPP_OH_LLM_MODEL,
     ONEAPP_OH_LLM_BASE_URL,
     ONEAPP_OH_AUTH_PASSWORD,
     ONEAPP_OH_TLS_DOMAIN
-  user_inputs:
-    oneapp_oh_llm_api_key: >-
+  USER_INPUTS:
+    ONEAPP_OH_LLM_API_KEY: >-
       O|password|LLM provider API key (Anthropic, OpenAI, etc.)||
-    oneapp_oh_llm_model: >-
+    ONEAPP_OH_LLM_MODEL: >-
       O|text|LLM model identifier (e.g. anthropic/claude-sonnet-4-20250514)||
-    oneapp_oh_llm_base_url: >-
+    ONEAPP_OH_LLM_BASE_URL: >-
       O|text|Custom LLM endpoint (OpenAI-compatible)||
-    oneapp_oh_auth_password: >-
+    ONEAPP_OH_AUTH_PASSWORD: >-
       O|password|Basic auth password (empty = auto-generate)||
-    oneapp_oh_tls_domain: >-
+    ONEAPP_OH_TLS_DOMAIN: >-
       O|text|Domain for Let's Encrypt (empty = self-signed)||
 logo: openhands.png
 images:

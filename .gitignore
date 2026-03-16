@@ -1,0 +1,4 @@
+build/export/
+build/images/
+build/one-apps/
+*.iso
